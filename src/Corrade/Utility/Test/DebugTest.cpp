@@ -89,6 +89,8 @@ struct DebugTest: TestSuite::Tester {
     #ifndef CORRADE_TARGET_EMSCRIPTEN
     void multithreaded();
     #endif
+
+    void sourceLocation();
 };
 
 DebugTest::DebugTest() {
@@ -154,7 +156,8 @@ DebugTest::DebugTest() {
         #ifndef CORRADE_TARGET_EMSCRIPTEN
         &DebugTest::multithreaded,
         #endif
-        });
+
+        &DebugTest::sourceLocation});
 }
 
 void DebugTest::debug() {
@@ -916,6 +919,36 @@ void DebugTest::multithreaded() {
     #endif
 }
 #endif
+
+void DebugTest::sourceLocation() {
+    std::ostringstream out;
+
+    {
+        Debug redirect{&out};
+
+        !Debug{} << "hello";
+
+        !Debug{} << "and this is from another line";
+
+        !Debug{};
+
+        Debug{} << "this no longer";
+    }
+
+    #ifdef CORRADE_UTILITY_DEBUG_HAS_SOURCE_LOCATION
+    CORRADE_COMPARE(out.str(),
+        __FILE__ ":929: hello\n"
+        __FILE__ ":931: and this is from another line\n"
+        __FILE__ ":933\n"
+        "this no longer\n");
+    #else
+    CORRADE_COMPARE(out.str(),
+        "hello\n"
+        "and this is from another line\n"
+        "this no longer\n");
+    CORRADE_SKIP("std::experimental::source_location not available.");
+    #endif
+}
 
 }}}}
 

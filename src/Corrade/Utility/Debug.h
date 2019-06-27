@@ -40,7 +40,22 @@
 #include "Corrade/Utility/Utility.h"
 #include "Corrade/Utility/visibility.h"
 
+#ifdef CORRADE_UTILITY_DEBUG_HAS_SOURCE_LOCATION
+#if CORRADE_CXX_STANDARD < 201401
+/* This feature could work even under C++11 if it didn't use constexpr */
+#define constexpr /** @todo UGH what?! (submit a PR with this?) */
+#endif
+#include <experimental/source_location>
+#if CORRADE_CXX_STANDARD < 201401
+#undef constexpr
+#endif
+#endif
+
 namespace Corrade { namespace Utility {
+
+#ifdef CORRADE_UTILITY_DEBUG_HAS_SOURCE_LOCATION
+namespace Implementation { struct DebugSourceLocation; }
+#endif
 
 /**
 @brief Debug output handler
@@ -129,6 +144,31 @@ This prints the below output on terminals that support it. See the operator
 documentation for more information.
 
 @include UtilityDebug-color-greyscale.ansi
+
+@section Utility-Debug-source-location Source location
+
+Similarly to the [dbg! macro in Rust](https://blog.rust-lang.org/2019/01/17/Rust-1.32.0.html#the-dbg-macro),
+on supported compilers the utility is able to print source file location and
+line where the debug output was executed, improving the "printf debugging"
+experience. By default no source location info is printed, in order to do that
+prefix the @ref Debug instantiation with an exclamation mark. Additionally,
+an otherwise unused exclamated instantiation prints just the file + line alone
+(in contrast to unexclamated instantiaton, which is a no-op):
+
+@snippet Utility.cpp Debug-source-location
+
+The above code then may print something like this:
+
+@code{.shell-session}
+main.cpp:10: the result is 42
+main.cpp:11: the result is 5.25
+main.cpp:13
+and finally, 42
+@endcode
+
+At the moment, this feature is available only on GCC 8.1 and newer, elsewhere
+it behaves like the unexclamated version. You can check for its availability
+using the @ref CORRADE_UTILITY_DEBUG_HAS_SOURCE_LOCATION predefined macro.
 
 @section Utility-Debug-multithreading Thread safety
 
@@ -603,6 +643,10 @@ class CORRADE_UTILITY_EXPORT Debug {
         InternalFlags _immediateFlags;
 
     private:
+        #ifdef CORRADE_UTILITY_DEBUG_HAS_SOURCE_LOCATION
+        friend Implementation::DebugSourceLocation;
+        #endif
+
         template<Color c, bool bold> CORRADE_UTILITY_LOCAL static Modifier colorInternal();
 
         CORRADE_UTILITY_LOCAL void resetColorInternal();
@@ -613,6 +657,10 @@ class CORRADE_UTILITY_EXPORT Debug {
         #else
         Color _previousColor;
         bool _previousColorBold;
+        #endif
+        #ifdef CORRADE_UTILITY_DEBUG_HAS_SOURCE_LOCATION
+        const char* _sourceLocationFile{};
+        int _sourceLocationLine{};
         #endif
 };
 
@@ -627,6 +675,30 @@ CORRADE_UTILITY_EXPORT Debug& operator<<(Debug& debug, Debug::Flags value);
 
 CORRADE_ENUMSET_OPERATORS(Debug::Flags)
 CORRADE_ENUMSET_OPERATORS(Debug::InternalFlags)
+
+#ifdef CORRADE_UTILITY_DEBUG_HAS_SOURCE_LOCATION
+namespace Implementation {
+    struct CORRADE_UTILITY_EXPORT DebugSourceLocation {
+        /*implicit*/ DebugSourceLocation(Debug&& a, const std::experimental::source_location& location = std::experimental::source_location::current());
+        Debug* debug;
+    };
+}
+
+/* Unfortunately it's not possible to add additional (default) arguments to
+   operator! so we need to use a implicitly convertible type and capture the
+   source location in its constructor */
+inline Debug& operator!(Implementation::DebugSourceLocation debug) {
+    return *debug.debug;
+}
+#else
+/** @relatesalso Debug
+@brief Prefix the output with source location
+
+Only on supported compilers, does nothing otherwise. See
+@ref Utility-Debug-source-location for more information.
+*/
+inline Debug& operator!(Debug&& debug) { return debug; }
+#endif
 
 #ifndef DOXYGEN_GENERATING_OUTPUT
 /* so Debug() << value works */
